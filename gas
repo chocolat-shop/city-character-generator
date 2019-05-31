@@ -1,0 +1,492 @@
+// ========================================================================
+// 個人設定
+// （後から変えるとすればこの辺りだけです）
+// ------------------------------------------------------------------------
+// 対象シートID
+//     docs.google.com/spreadsheets/d/[ここの部分]/
+var SHEET_ID = '1sXIg9GOEDpGAOC95F73VZT0Rof1Tq27bHJLiWpU8YAI';
+var SHEET = SpreadsheetApp.openById(SHEET_ID);
+//var DATASET_SHEET = SHEET.getSheetByName('dataset');
+// 書き出し対象ドライブID
+//    drive.google.com/drive/u/0/folders/[ここの部分]
+//var DRIVE_ID = '';
+// ========================================================================
+// 定数値
+// -> 増えて来たのでリリース後にリファクタリングしてシートにまとめます
+// （definedValueシートから取得する形式）
+// ------------------------------------------------------------------------
+// 書き出しファイル名 + _(timestamp)
+//var FILE_NAME = 'result_doc';
+// 二行目からのデータを取得（一行目はカラム名（ヘッダー行））
+var START_ROW_NUM = 2;
+// 通常のデータは一列目に入れる
+// （行番号追加するなら二列目に変えるかも）
+var STANDARD_DATA_COL_NUM = 1;
+// 偏差重み付けは通常二列目
+var DEVIATION_COL_NUM = 2;
+
+// ------------------------------------------------------------------------
+// シート名
+// ------------------------------------------------------------------------
+// 結果書き出し
+var RESULT_SHEET_NAME = 'result';
+var RESULT_START_ROW = 11;
+var RESULT_START_COL = 3;
+var INPUT_USERNAME_CELL = 'C4';
+
+// 実行データログ
+var LOG_SHEET_NAME = 'log';
+var LOG_START_COL  = 1;
+
+// パラメーターシート
+var PARAM_SHEET = 'param';
+
+// Category B: 先天的要素
+// 性別
+var SEX    = 'B_性別';
+var MALE   = '男性';
+var FEMALE = '女性';
+// 身長
+var HEIGHT = 'B_身長';
+
+// Category C: 後天的要素
+// 髪型
+var HAIR_STYLE  = 'C_髪型';
+var HAIR_MALE   = 'C_髪型（男性）';
+var HAIR_FEMALE = 'C_髪型（女性）';
+var HAIR_COMMON = 'C_髪型（共通）';
+// Rhythm
+var RHYTHM = 'C_神器';
+var RIGHT_RHYTHM = '右神器';
+var RIGHT_RHYTHM_TYPE  = 'C_右神器（属性）';
+var RIGHT_RHYTHM_CLASS = 'C_右神器（階級）';
+
+// ========================================================================
+// 実行部分
+// ------------------------------------------------------------------------
+function main(){
+  // 入力データ生成
+  var userName = getInputUserName();
+  var characterData = generateCharacterData();
+  characterData[0].unshift(userName);
+
+  // 出力
+  outputCharacterData(characterData);
+
+  // ログ出力用の日時取得  
+  var date = new Date;
+  characterData[0].push(date.toLocaleString());
+  outputLog(characterData);
+}
+
+// ========================================================================
+// ログ出力
+// ------------------------------------------------------------------------
+function outputLog(characterData){
+  //Logger.log(characterData);
+  // シートオブジェクト取得
+  var logSheetData = getSheetData(LOG_SHEET_NAME);
+  
+  // 行数を取得
+  var maxRow = logSheetData.maxRow;
+  
+  // ログを書き出し
+  SHEET.getSheetByName(LOG_SHEET_NAME)
+  .getRange((logSheetData.maxRow + 1), LOG_START_COL, characterData.length, characterData[0].length)
+  .setValues(characterData);
+
+}
+
+// ========================================================================
+// データ書き出し
+// ------------------------------------------------------------------------
+function outputCharacterData(characterData){
+  Logger.log(characterData);
+  // 転置した配列を作成
+  var transPositionCharacterData = [];
+  
+  // ぐるぐる回して転置
+  for(var i=0; i< characterData[0].length; i++){
+    transPositionCharacterData[i] = Array(String(characterData[0][i]));
+  }
+  //Logger.log(transPositionCharacterData);
+  
+  // 結果を書き出し
+  SHEET.getSheetByName(RESULT_SHEET_NAME)
+  .getRange(RESULT_START_ROW, RESULT_START_COL, transPositionCharacterData.length)
+  .setValues(transPositionCharacterData);
+}
+// ========================================================================
+// 入力されたユーザー名を取得
+// ------------------------------------------------------------------------
+function getInputUserName(){
+  // 入力欄からユーザ名を取得
+  var userName = SHEET.getSheetByName(RESULT_SHEET_NAME).getRange(INPUT_USERNAME_CELL).getValue();
+  
+  // 空白だった時の処理
+  if(userName == ''){
+    userName = 'Nobody';
+  }
+  
+  return userName;
+}
+
+// ========================================================================
+// データ生成
+// ------------------------------------------------------------------------
+function generateCharacterData(){
+  // 結果データ配列
+  var CharacterData = [];
+
+  // 結果シートオブジェクト取得
+  var resultSheet = SHEET.getSheetByName(RESULT_SHEET_NAME);
+
+  // 前置き処理
+  // 他のシートで参照の対象になるデータは先に取得しておく
+  var sex = getRandomData(SEX);
+  
+  // パラメーターシート読み込み
+  var dataSet = loadSheetData(PARAM_SHEET);
+
+  // パラメーターシートの内容を順次処理
+  // シート内容取得処理がDRY原則に反しているが
+  // 前置き処理で一つにまとめると特殊処理時に無駄にシートを読みに行って処理時間がかかるので
+  // 個別に必要なタイミングで取得しに行く
+  for(var i=0; i<dataSet.length; i++){
+    // 書き込みデータ初期化
+    var data = '';
+    
+    // シート名取得
+    var sheetName = dataSet[i]['sheetName'];
+    
+    // 特定シート名の時、特殊処理
+    if(sheetName == SEX ) { // 性別
+      // 前置き処理で既に取得しているので再度取得はしない
+      data = sex;
+    
+    } else if(sheetName == HEIGHT){ //　身長
+      //　データを取得
+      data = getRandomData(sheetName);
+      // 身長はプラマイ5の範囲でさらに変動
+      // -> 本当は 種族固有値 + 偏差 + プラマイ5 みたいな感じにしたいが設定がめどいので保留
+      var height = Number(data) + ( Math.floor(Math.random() * 10) -10 );
+      
+      // data更新（配列の先頭にしないとあとで上手くデータリファレンスに変換できない）
+      data[0] = height;
+      
+    // ヘテロクロミアと義眼の処理は後で書く
+      
+    } else if(sheetName == HAIR_STYLE ){ //髪型
+      // 髪型は共通+性別でセットを作ってそこからランダム
+      var hairData = getRandomHairData(sex);
+      
+      // data更新
+      data = hairData;
+    
+    } else if(sheetName == RHYTHM) { // 神器
+      var rhythm = getRandomData(sheetName);
+      
+      // Right Rhtym
+      if(rhythm == RIGHT_RHYTHM){
+        var type  = getRandomData(RIGHT_RHYTHM_TYPE);
+        var class = getRandomData(RIGHT_RHYTHM_CLASS);
+
+        // data更新（配列型にしないとあとで上手くデータリファレンスに変換できない）
+        var ra = [];
+        ra[0] = String(type + class);
+        
+        data = ra;
+      } 
+    } else if(dataSet[i]['isSubSheet'] != false ){ // サブシートがある時
+      //　データを取得
+      var data = getRandomData(dataSet[i]['sheetName']);
+      
+      // シート読み込み
+      var mainSheet = loadSheetData(dataSet[i]['sheetName']);
+      
+      // サブシートの処理
+      for(var j=0; j<mainSheet.length; j++){
+        // サブシートが存在し、かつデータがサブシート保持項目名と一致する時
+        if( mainSheet[j]['isSubSheetName'] != false && data == mainSheet[j]['content'] ){
+          //　データを取得
+          var subData = getRandomData(mainSheet[j]['isSubSheetName']);
+          
+          // data更新
+          data = subData;
+        }
+      }
+    } else { // 何にもする必要がない時
+      //　データを取得
+      data = getRandomData(dataSet[i]['sheetName']);
+      
+    }
+    // データ配列を作る
+    CharacterData[i] = data[0];
+  }
+  CharacterData = Array(CharacterData);
+
+  return CharacterData;
+}
+// ========================================================================
+// loadSheetData
+// ------------------------------------------------------------------------
+// シートデータ読み込み
+// ------------------------------------------------------------------------
+// 引数
+//   sheetName: シートの名前
+// 返り値
+//   dataSet: シートデータの連想配列
+// ------------------------------------------------------------------------
+function loadSheetData(SheetName){
+  // シートオブジェクト取得
+  var parameterSheet = getSheetData(SheetName);
+  
+  // 行数を取得
+  var maxRow = parameterSheet.maxRow;
+  
+  // 列数を取得
+  var maxCol = parameterSheet.maxCol;
+  
+  // ヘッダー行の内容を取得
+  var headder = parameterSheet.headder;
+  
+  // シートの情報を取得
+  var data = parameterSheet.data;
+  
+  // 取得した情報の連想配列化
+  var dataSet = [];
+  for(var i=0; i<data.length; i++){
+    //var array = [];
+    var hash = {};
+    for(var j=0; j<data[i].length; j++){
+      var key = headder[0][j];
+      var value = data[i][j];
+      hash[key] = value;
+    }
+    dataSet[i] = hash;
+  }
+  // 連想配列の作り方が気持ち悪いけどなんか上手く入れられず
+  // こんな感じの力技になった
+ 
+  return dataSet;
+}
+
+// ========================================================================
+// getSheetData
+// ------------------------------------------------------------------------
+// シートの基本的な情報を返す
+// ------------------------------------------------------------------------
+// 引数
+//   sheetName:シートの名前
+// 返り値
+//   sheetData:k-v連想配列
+//     maxRow :最大列数
+//     maxCol :最大行数
+//     headder:ヘッダー行データ
+//     data   :データ本体
+// ------------------------------------------------------------------------
+function getSheetData(sheetName){
+  // シートオブジェクト取得
+  var sheetObj = SHEET.getSheetByName(sheetName);
+  
+  // 行数を取得
+  var maxRow = sheetObj.getLastRow();
+  var getRowNum = (maxRow　== 1 ? maxRow : maxRow - 1);
+  
+  
+  // 列数を取得
+  var maxCol = sheetObj.getLastColumn();
+  
+  // ヘッダー行の内容を取得
+  var headder = sheetObj.getRange(1, 1, 1, maxCol).getValues();
+  
+  // シートの情報を取得
+  var data = sheetObj.getRange(START_ROW_NUM, 1, getRowNum, maxCol).getValues();
+  
+  // シートデータ連想配列
+  var sheetData = {
+    maxRow : maxRow,
+    maxCol : maxCol,
+    headder: headder,
+    data   : data,
+  };
+  
+  return sheetData;
+}
+
+// ========================================================================
+// getRandomData
+// ------------------------------------------------------------------------
+// 標準的な書式のシートからランダムにデータを返す
+// ------------------------------------------------------------------------
+// 引数
+//   sheetName:シートタブの名前
+// 返り値
+//   data:シートの内容を元にしたランダムな値
+// ------------------------------------------------------------------------
+function getRandomData(sheetName){
+  // データセット（配列）を取得
+  var dataSet = createDataSet(sheetName);
+  
+  // ランダムな値を返す
+  return dataSet[Math.floor(Math.random() * dataSet.length)];
+}
+
+// ========================================================================
+// createDataSet
+// ------------------------------------------------------------------------
+// シートの中身を元にしたデータセットの生成
+// A列の内容が配列に入る
+// B列は偏差の重み付け
+// （整数値のみ受付、大きいほど出現頻度が高い。デフォルト1）
+// ------------------------------------------------------------------------
+// 引数
+//   sheetName:シートタブの名前
+// 返り値
+//   dataSet:シートの内容を元にした配列
+// ------------------------------------------------------------------------
+function createDataSet(sheetName){
+  // シートのオブジェクトを取得
+  var currentSheet = SHEET.getSheetByName(sheetName);
+  
+  // 行数を取得
+  var maxRow = currentSheet.getLastRow();
+  
+  // Sheetオブジェクト.getRange(行番号, 列番号, 行数, 列数)
+  // A列の内容取得
+  var data = currentSheet.getRange(START_ROW_NUM, STANDARD_DATA_COL_NUM, maxRow, 1).getValues();
+  
+  // B列の数値取得
+  var weight = currentSheet.getRange(START_ROW_NUM, DEVIATION_COL_NUM, maxRow, 1).getValues();
+
+　/*  
+  // 重みの合計を取得
+  // reduce で配列同士を再帰的に足し合わせる
+  var sumDeviation = weight.reduce( function(p, c) {
+    // 文字列として認識されるので、整数型十進数として変換
+    return parseInt(p, 10) + parseInt(c, 10);
+  } );
+  // 作った後で「使わないわ」って気づいた
+  */
+  
+  // A*Bのデータセットを作る
+  var dataSet = new Array();
+  // あんまりイケてない実装だけどわかりやすさ優先で二重ループ
+  // 最大行数分処理を行う
+  for(var i = 0; i < (maxRow - 1); i++){
+    // 重み付け分繰り返し処理
+    for(var j = 0; j < weight[i]; j++){
+      // 配列にデータを追加
+      dataSet.push(data[i]);
+    }
+  }
+   
+  // 取得した内容を返す
+  return dataSet;
+}
+
+// ========================================================================
+// getRandomHairData
+// ------------------------------------------------------------------------
+// 標準的な書式のシートからランダムにデータを返す
+// ------------------------------------------------------------------------
+// 引数
+//   sex:性別の値
+// 返り値
+//   hairData:髪型（ランダムな値）
+// ------------------------------------------------------------------------
+function getRandomHairData(sex){
+  sex ? undefined : 'none';
+  // データセット（配列）を取得
+  var hairDataSet = createHairDataSet(sex);
+  
+  // ランダムな値を返す
+  return hairDataSet[Math.floor(Math.random() * hairDataSet.length)];
+}
+// ========================================================================
+// crateHairDataSet
+// ------------------------------------------------------------------------
+// 髪型のデータセットを作る
+// ------------------------------------------------------------------------
+// 引数
+//   sex: 性別の値
+// 返り値
+//   hairDataSet: 髪型の配列
+// ------------------------------------------------------------------------
+function createHairDataSet(sex){
+  sex ? undefined : 'none';
+  var hairDataSet = [];
+  
+  // 共通の髪型を取得
+  // 最初に全パターン生成しないのは処理時間節約のため（DRYが犠牲になってる）
+  var commonDataSet = createDataSet(HAIR_COMMON);
+  
+  if(sex == MALE){// 男性の場合
+    // 共通の髪型に男性の髪型を追加
+    hairDataSet = commonDataSet.concat(createDataSet(HAIR_MALE));
+  } else if(sex == FEMALE){ // 女性の場合
+    // 共通の髪型に女性の髪型を追加
+    hairDataSet = commonDataSet.concat(createDataSet(HAIR_FEMALE));
+  } else { // それ以外の場合
+    // 共通の髪型に男性の髪型を追加
+    hairDataSet = commonDataSet.concat(createDataSet(HAIR_MALE));
+    // 女性の髪型を追加
+    hairDataSet = hairDataSet.concat(createDataSet(HAIR_FEMALE));
+  }
+  
+  return hairDataSet;
+}
+
+// ========================================================================
+// randomizeArray
+// ------------------------------------------------------------------------
+// 配列の中身をランダムに並べ替える
+// ------------------------------------------------------------------------
+// 引数
+//   array: 配列
+// ------------------------------------------------------------------------
+function randomizeArray(array){
+  // 配列の位置をランダムで取得する場合、必要ない処理。
+  // 複数ダイスで中央値があるようなランダムの取得だとそれなりに意味はある。
+  var randomize = new Array();
+  var randArray = generateRandArray(array.length);
+  for(var i = 0; i < array.length; i++){
+    randomize.push(array[randArray[i]]);
+  }
+  
+  return randomize;
+}
+// ========================================================================
+// generateRandArray
+// ------------------------------------------------------------------------
+// 並び順がランダムな配列生成
+// 0 から maxRow までの整数配列をランダムに並べ替える
+// ------------------------------------------------------------------------
+// 引数
+//   maxRow: 配列の最大長
+// ------------------------------------------------------------------------
+function generateRandArray(maxRow){
+  // 整列された配列生成
+  var orderArray = new Array(maxRow);
+  for(var i=0; i<maxRow; i++){
+    orderArray[i] = i;
+  }
+  
+  //並び順がランダムな配列生成
+  var randArray = [];
+  
+  // 整列配列から値が全て取り除かれるまで続ける
+  while(orderArray.length){
+    // 整列配列の範囲でランダム数を生成
+    var randNum = Math.floor(Math.random() * orderArray.length );
+    
+    // ランダム配列に整列配列から一つ値入れる
+    randArray.push( orderArray[randNum] );
+    
+    // 整列配列から値を一つ取り除く
+    orderArray.splice(randNum, 1);
+  }
+
+  return randArray;
+}
+
